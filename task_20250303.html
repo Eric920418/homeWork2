@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Phaser Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #87ceeb;
+        position: relative;
+      }
+      /* 重新開始按鈕預設隱藏，並置中 */
+      #restartButton {
+        display: none;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 24px;
+        padding: 10px 20px;
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 重新開始按鈕 -->
+    <button id="restartButton">重新開始</button>
+    <script>
+      window.onload = function () {
+        let level = 1; // 初始關卡
+        let bombSpeed = 150; // 初始炸彈追蹤速度
+
+        const config = {
+          type: Phaser.AUTO,
+          width: 800,
+          height: 600,
+          physics: {
+            default: "arcade",
+            arcade: {
+              gravity: { y: 500 },
+              debug: false,
+            },
+          },
+          scene: {
+            preload,
+            create,
+            update,
+          },
+        };
+
+        const game = new Phaser.Game(config);
+
+        let ball;
+        let ground, groundTop, ground4, groundRight, ground2, ground3;
+        let stars;
+        let cursors;
+        let bomb; // 炸彈
+        let score = 0; // 分數
+        let scoreText; // 顯示分數與關卡
+
+        function preload() {
+          this.load.image("background", "./assets/background.png");
+          this.load.image("clouds", "./assets/clouds.png");
+          this.load.image("ball", "./assets/dude.png");
+          this.load.image("ice-platform", "./assets/ice-platform.png");
+          this.load.image("platform", "./assets/platform.png");
+          this.load.image("trees", "./assets/trees.png");
+          // 載入角色動畫用的 spritesheet
+          this.load.spritesheet("dude", "./assets/dude.png", {
+            frameWidth: 32,
+            frameHeight: 48,
+          });
+          this.load.image(
+            "star",
+            "https://labs.phaser.io/assets/demoscene/star2.png"
+          );
+          this.load.image("bomb", "/assets/bonb.png");
+        }
+
+        function create() {
+          this.cameras.main.setBackgroundColor("#87CEEB");
+
+          // 背景 (保持固定)
+          this.add.image(400, 300, "background").setScale(1.2);
+
+          // 邊界平台 (保持固定)
+          ground = this.add.rectangle(400, 600, 800, 50, 0x0000ff);
+          this.physics.add.existing(ground, true);
+          groundTop = this.add.rectangle(400, 0, 800, 50, 0x0000ff);
+          this.physics.add.existing(groundTop, true);
+          ground4 = this.add.rectangle(0, 300, 50, 600, 0x0000ff);
+          this.physics.add.existing(ground4, true);
+          groundRight = this.add.rectangle(800, 300, 50, 600, 0x0000ff);
+          this.physics.add.existing(groundRight, true);
+
+          // 中間平台 (之後會隨機)
+          ground2 = this.physics.add.staticImage(500, 450, "platform");
+          ground2.setScale(2, 1).refreshBody();
+          ground3 = this.physics.add.staticImage(250, 300, "platform");
+          ground3.refreshBody();
+
+          // 建立動畫：左右移動與靜止
+          this.anims.create({
+            key: "left",
+            frames: this.anims.generateFrameNumbers("dude", {
+              start: 0,
+              end: 3,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+          this.anims.create({
+            key: "turn",
+            frames: [{ key: "dude", frame: 4 }],
+            frameRate: 20,
+          });
+          this.anims.create({
+            key: "right",
+            frames: this.anims.generateFrameNumbers("dude", {
+              start: 5,
+              end: 8,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          // 建立主角 (ball) 並置於隨機位置（避開邊界區域）
+          ball = this.physics.add
+            .sprite(
+              Phaser.Math.Between(100, 700),
+              Phaser.Math.Between(100, 500),
+              "dude"
+            )
+            .setCollideWorldBounds(true);
+          this.physics.add.existing(ball);
+          ball.body.setCollideWorldBounds(true);
+
+          // 建立星星群並隨機分布
+          stars = this.physics.add.group({
+            key: "star",
+            repeat: 9, // 共 10 顆星星
+          });
+          stars.children.iterate(function (star) {
+            star.setCollideWorldBounds(true);
+            star.enableBody(
+              true,
+              Phaser.Math.Between(50, 750),
+              Phaser.Math.Between(50, 550),
+              true,
+              true
+            );
+          });
+
+          // 建立炸彈並隨機位置
+          bomb = this.physics.add.image(
+            Phaser.Math.Between(50, 750),
+            Phaser.Math.Between(50, 550),
+            "bomb"
+          );
+          bomb.setScale(0.3, 0.3).refreshBody();
+          bomb.setCollideWorldBounds(true);
+          bomb.setBounce(1);
+
+          cursors = this.input.keyboard.createCursorKeys();
+
+          // 碰撞設定
+          this.physics.add.collider(ball, ground);
+          this.physics.add.collider(ball, groundTop);
+          this.physics.add.collider(ball, ground4);
+          this.physics.add.collider(ball, groundRight);
+          this.physics.add.collider(ball, ground2);
+          this.physics.add.collider(ball, ground3);
+
+          this.physics.add.collider(ground2, stars);
+          this.physics.add.collider(ground3, stars);
+          this.physics.add.collider(ground, stars);
+
+          this.physics.add.collider(bomb, ground);
+          this.physics.add.collider(bomb, groundTop);
+          this.physics.add.collider(bomb, ground4);
+          this.physics.add.collider(bomb, groundRight);
+          this.physics.add.collider(bomb, ground2);
+          this.physics.add.collider(bomb, ground3);
+
+          this.physics.add.overlap(ball, stars, collectStar, null, this);
+          this.physics.add.collider(ball, bomb, hitBomb, null, this);
+
+          // 顯示分數與關卡資訊
+          scoreText = this.add.text(
+            25,
+            25,
+            "分數: " + score + " | 關卡: " + level,
+            { fontSize: "32px", fill: "#000" }
+          );
+
+          // 重新開始按鈕點擊事件：重新整理頁面以重新開始遊戲
+          document.getElementById("restartButton").onclick = function () {
+            location.reload();
+          };
+        }
+
+        function update() {
+          const ballBounds = ball.getBounds();
+          const onLeftWall = Phaser.Geom.Intersects.RectangleToRectangle(
+            ballBounds,
+            ground4.getBounds()
+          );
+          const onRightWall = Phaser.Geom.Intersects.RectangleToRectangle(
+            ballBounds,
+            groundRight.getBounds()
+          );
+          const onTopWall = Phaser.Geom.Intersects.RectangleToRectangle(
+            ballBounds,
+            groundTop.getBounds()
+          );
+          const onBottomWall = Phaser.Geom.Intersects.RectangleToRectangle(
+            ballBounds,
+            ground.getBounds()
+          );
+
+          if (onLeftWall || onRightWall || onTopWall || onBottomWall) {
+            ball.body.allowGravity = false;
+            let vx = 0,
+              vy = 0;
+            if (cursors.left.isDown) {
+              vx = -300;
+            } else if (cursors.right.isDown) {
+              vx = 300;
+            }
+            if (cursors.up.isDown) {
+              vy = -300;
+            } else if (cursors.down.isDown) {
+              vy = 300;
+            }
+            ball.body.setVelocity(vx, vy);
+          } else {
+            ball.body.allowGravity = true;
+            if (ball.body.blocked.down) {
+              if (cursors.left.isDown) {
+                ball.body.setVelocityX(-200);
+              } else if (cursors.right.isDown) {
+                ball.body.setVelocityX(200);
+              } else {
+                ball.body.setVelocityX(0);
+              }
+              if (cursors.up.isDown) {
+                ball.body.setVelocityY(-400);
+              }
+            }
+          }
+
+          if (cursors.left.isDown) {
+            ball.anims.play("left", true);
+          } else if (cursors.right.isDown) {
+            ball.anims.play("right", true);
+          } else {
+            ball.anims.play("turn", true);
+          }
+
+          if (bomb && ball) {
+            let angle = Phaser.Math.Angle.Between(
+              bomb.x,
+              bomb.y,
+              ball.x,
+              ball.y
+            );
+            bomb.body.setVelocity(
+              Math.cos(angle) * bombSpeed,
+              Math.sin(angle) * bombSpeed
+            );
+          }
+        }
+
+        function collectStar(ball, star) {
+          ball.setAlpha(0.5); // 變半透明，提示玩家無敵
+          ball.body.checkCollision.none = true; // 讓 ball 不與任何東西碰撞
+
+          // 設置一個計時器，讓無敵狀態持續 3 秒
+          ball.scene.time.delayedCall(1000, () => {
+            ball.setAlpha(1); // 回復正常透明度
+            ball.body.checkCollision.none = false; // 重新啟用碰撞
+          });
+
+          star.disableBody(true, true);
+          score += 1;
+          scoreText.setText("分數: " + score + " | 關卡: " + level);
+          // 當所有星星都被收集時進入下一關
+          if (stars.countActive(true) === 0) {
+            nextLevel();
+          }
+        }
+
+        function nextLevel() {
+          level++;
+          bombSpeed += 50;
+
+          ball.setPosition(
+            Phaser.Math.Between(100, 700),
+            Phaser.Math.Between(100, 500)
+          );
+
+          // 隨機重新定位中間平台
+          ground2.setPosition(
+            Phaser.Math.Between(100, 700),
+            Phaser.Math.Between(200, 500)
+          );
+          ground2.refreshBody();
+          ground3.setPosition(
+            Phaser.Math.Between(100, 700),
+            Phaser.Math.Between(200, 500)
+          );
+          ground3.refreshBody();
+
+          // 隨機重新定位炸彈
+          bomb.setPosition(
+            Phaser.Math.Between(50, 750),
+            Phaser.Math.Between(50, 550)
+          );
+
+          // 隨機重新定位所有星星
+          stars.children.iterate(function (child) {
+            child.enableBody(
+              true,
+              Phaser.Math.Between(50, 750),
+              Phaser.Math.Between(50, 550),
+              true,
+              true
+            );
+          });
+
+          // 更新顯示的分數與關卡資訊
+          scoreText.setText("分數: " + score + " | 關卡: " + level);
+        }
+
+        function hitBomb(ball, bomb) {
+          this.physics.pause();
+          ball.setTint(0xff0000);
+          scoreText.setText("遊戲結束");
+          // 顯示重新開始按鈕
+          document.getElementById("restartButton").style.display = "block";
+        }
+      };
+    </script>
+  </body>
+</html>
